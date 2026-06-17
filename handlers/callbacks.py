@@ -50,10 +50,26 @@ def register_handlers(client):
             action = get_action_key(data)
             user_id = event.sender_id
             
+            # Clean up all active text-listening states to prevent leakage
+            try:
+                from .admin import _admin_action_states, _admin_plan_temp
+                from .my_bots import _bot_action_states
+                from .payments_extended import _payment_user_states
+                from .add_bot import clean_login_state
+                
+                _admin_action_states.pop(user_id, None)
+                _admin_plan_temp.pop(user_id, None)
+                _bot_action_states.pop(user_id, None)
+                _payment_user_states.pop(user_id, None)
+                await clean_login_state(user_id)
+            except Exception as cleanup_err:
+                logger.error(f"Error cleaning up states on callback: {cleanup_err}")
+                
             # Show the translation help text popup
             await utils.show_help(event, action, user_id)
         except events.StopPropagation:
             raise
         except Exception as e:
             logger.error(f"Error in global callback help handler: {e}")
+
             # Do not raise events.StopPropagation so other matching callback handlers can still fire.

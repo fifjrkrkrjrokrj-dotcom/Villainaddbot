@@ -57,18 +57,21 @@ async def join_vc(client: TelegramClient, peer_id: int) -> bool:
         from telethon.tl.functions.channels import GetFullChannelRequest
         from telethon.tl.functions.messages import GetFullChatRequest
         from telethon.tl.functions.phone import JoinGroupCallRequest
-        from telethon.tl.types import InputGroupCall, DataJSON
+        from telethon.tl.types import InputGroupCall, DataJSON, Channel, GroupCallDiscarded
         
         entity = await client.get_entity(peer_id)
-        if hasattr(entity, 'broadcast') and entity.broadcast:
+        if isinstance(entity, Channel):
             full = await client(GetFullChannelRequest(entity))
         else:
-            full = await client(GetFullChatRequest(entity))
+            full = await client(GetFullChatRequest(entity.id))
             
         group_call = full.full_chat.call
-        if group_call:
+        if group_call and not isinstance(group_call, GroupCallDiscarded):
             await client(JoinGroupCallRequest(
-                call=group_call,
+                call=InputGroupCall(
+                    id=group_call.id,
+                    access_hash=group_call.access_hash
+                ),
                 join_as=await client.get_input_entity('me'),
                 params=DataJSON(data='{}'),
                 muted=True
@@ -80,6 +83,7 @@ async def join_vc(client: TelegramClient, peer_id: int) -> bool:
     except Exception as e:
         logger.warning(f"Could not join VC for peer {peer_id}: {e}")
     return False
+
 
 async def force_join_channels(client: TelegramClient, channels: list):
     """

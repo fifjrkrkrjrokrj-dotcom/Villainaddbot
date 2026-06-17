@@ -73,6 +73,24 @@ def register_handlers(client):
     async def admin_menu_callback(event):
         await show_admin_panel(event, event.sender_id)
 
+    @client.on(events.CallbackQuery(pattern="^cancel_admin_plan$"))
+    async def cancel_admin_plan_callback(event):
+        user_id = event.sender_id
+        if not check_admin(user_id):
+            return
+        _admin_action_states.pop(user_id, None)
+        _admin_plan_temp.pop(user_id, None)
+        await admin_manage_plans_callback(event)
+
+    @client.on(events.CallbackQuery(pattern="^cancel_admin_setting$"))
+    async def cancel_admin_setting_callback(event):
+        user_id = event.sender_id
+        if not check_admin(user_id):
+            return
+        _admin_action_states.pop(user_id, None)
+        await show_admin_panel(event, user_id)
+
+
     @client.on(events.CallbackQuery(pattern="^admin_manage_plans$"))
     async def admin_manage_plans_callback(event):
         user_id = event.sender_id
@@ -124,7 +142,12 @@ def register_handlers(client):
         _admin_plan_temp[user_id] = {}
         
         prompt_text = utils.get_text("prompt_plan_days", lang)
-        await event.respond(prompt_text)
+        buttons = [[utils.styled_button("🔙 Cancel", "cancel_admin_plan", style="danger")]]
+        try:
+            await event.edit(prompt_text, buttons=buttons)
+        except Exception:
+            await event.respond(prompt_text, buttons=buttons)
+
 
     @client.on(events.CallbackQuery(pattern="^admin_remove_plan_start$"))
     async def admin_remove_plan_start_callback(event):
@@ -259,7 +282,12 @@ def register_handlers(client):
         else:
             prompt_text = utils.get_text(prompt_key, lang)
             
-        await event.respond(prompt_text)
+        buttons = [[utils.styled_button("🔙 Cancel", "cancel_admin_setting", style="danger")]]
+        try:
+            await event.edit(prompt_text, buttons=buttons)
+        except Exception:
+            await event.respond(prompt_text, buttons=buttons)
+
 
     # ------------------ Admin Message Input Listener ------------------
     @client.on(events.NewMessage)
@@ -296,7 +324,8 @@ def register_handlers(client):
                     raise ValueError("Days must be positive")
                 _admin_plan_temp.setdefault(user_id, {})["days"] = days
                 _admin_action_states[user_id] = "WAITING_FOR_PLAN_PRICE"
-                await event.reply(utils.get_text("prompt_plan_price", lang))
+                buttons = [[utils.styled_button("🔙 Cancel", "cancel_admin_plan", style="danger")]]
+                await event.reply(utils.get_text("prompt_plan_price", lang), buttons=buttons)
                 return
                 
             # 0.2 Plan Price
@@ -306,8 +335,10 @@ def register_handlers(client):
                     raise ValueError("Price must be positive")
                 _admin_plan_temp.setdefault(user_id, {})["price"] = price
                 _admin_action_states[user_id] = "WAITING_FOR_PLAN_NAME"
-                await event.reply(utils.get_text("prompt_plan_name", lang))
+                buttons = [[utils.styled_button("🔙 Cancel", "cancel_admin_plan", style="danger")]]
+                await event.reply(utils.get_text("prompt_plan_name", lang), buttons=buttons)
                 return
+
                 
             # 0.3 Plan Name
             elif action == "WAITING_FOR_PLAN_NAME":

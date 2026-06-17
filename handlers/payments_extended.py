@@ -454,11 +454,14 @@ def register_handlers(client):
             state["photo_file_id"] = event.message.photo[-1].file_id
             state["action"] = "WAITING_FOR_UTR"
             
+            buttons = [[utils.styled_button("❌ Cancel", "menu_settings", style="danger")]]
             await event.reply(
                 "📸 **Screenshot received!**\n\n"
                 "🔢 **Now enter your UTR / Transaction Hash:**\n"
-                "Example: `612207806800` or transaction reference code."
+                "Example: `612207806800` or transaction reference code.",
+                buttons=buttons
             )
+
             
         # 2. UTR transaction code input
         elif action == "WAITING_FOR_UTR":

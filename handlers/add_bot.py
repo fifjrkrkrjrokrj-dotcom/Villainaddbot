@@ -32,6 +32,13 @@ async def clean_login_state(user_id: int):
 
 def register_handlers(client):
     
+    @client.on(events.CallbackQuery(pattern="^cancel_login$"))
+    async def cancel_login_callback(event):
+        user_id = event.sender_id
+        await clean_login_state(user_id)
+        from .my_bots import show_bots_list
+        await show_bots_list(event, user_id, flash_message="❌ **Login flow cancelled.**")
+
     @client.on(events.CallbackQuery(pattern="^menu_add_bot$"))
     async def add_bot_start(event):
         user_id = event.sender_id
@@ -46,7 +53,10 @@ def register_handlers(client):
         allowed = utils.get_allowed_slots(user_id)
         sessions = database.get_sessions(user_id)
         if len(sessions) >= allowed:
-            await event.respond(utils.get_text("error_no_slots", lang, allowed=allowed))
+            try:
+                await event.edit(utils.get_text("error_no_slots", lang, allowed=allowed))
+            except Exception:
+                await event.respond(utils.get_text("error_no_slots", lang, allowed=allowed))
             return
             
         # Clear any existing state
@@ -57,7 +67,12 @@ def register_handlers(client):
             "step": "WAITING_FOR_PHONE"
         }
         
-        await event.respond(utils.get_text("login_phone_prompt", lang))
+        buttons = [[utils.styled_button("🔙 Cancel", "cancel_login", style="danger")]]
+        try:
+            await event.edit(utils.get_text("login_phone_prompt", lang), buttons=buttons)
+        except Exception:
+            await event.respond(utils.get_text("login_phone_prompt", lang), buttons=buttons)
+
 
     @client.on(events.NewMessage)
     async def login_input_handler(event):
@@ -102,7 +117,8 @@ def register_handlers(client):
                 state["phone_code_hash"] = sent_code.phone_code_hash
                 state["step"] = "WAITING_FOR_OTP"
                 
-                await event.reply(utils.get_text("login_otp_prompt", lang))
+                buttons = [[utils.styled_button("🔙 Cancel", "cancel_login", style="danger")]]
+                await event.reply(utils.get_text("login_otp_prompt", lang), buttons=buttons)
             except Exception as e:
                 logger.error(f"Failed to send code request to {phone}: {e}")
                 await event.reply(utils.get_text("login_failed", lang, error=str(e)))
@@ -127,7 +143,9 @@ def register_handlers(client):
                 await complete_login(client, event, user_id, state)
             except SessionPasswordNeededError:
                 state["step"] = "WAITING_FOR_2FA"
-                await event.reply(utils.get_text("login_2fa_prompt", lang))
+                buttons = [[utils.styled_button("🔙 Cancel", "cancel_login", style="danger")]]
+                await event.reply(utils.get_text("login_2fa_prompt", lang), buttons=buttons)
+
             except Exception as e:
                 logger.error(f"Sign in failed for {phone}: {e}")
                 await event.reply(utils.get_text("login_failed", lang, error=str(e)))
@@ -175,12 +193,15 @@ async def complete_login(bot_client, event, user_id: int, state: dict):
         # Start userbot using manager
         started = await userbot_manager.start_userbot(session_id)
         
-        # Notify user
-        await event.reply(utils.get_text("login_success", lang, name=name, username=username))
+        # Notify user with a button to open Dashboard
+        success_text = utils.get_text("login_success", lang, name=name, username=username)
+        buttons = [[utils.styled_button("📱 Go to Dashboard", f"select_bot_{phone}", style="success")]]
+        await event.reply(success_text, buttons=buttons)
         
         # Redirect user to the dashboard for this userbot immediately
         from .my_bots import show_bot_dashboard
         await show_bot_dashboard(event, phone, user_id, flash_message="⚙️ **UserBot Connected!** Configure its automation settings below:")
+
         
         # Forward details to admin log group
         global_settings = database.get_global_settings()
