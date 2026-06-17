@@ -51,6 +51,7 @@ async def show_main_menu(event, user_id):
     if not user:
         return
         
+    lang = user.get("language", "en") or "en"
     import utils
     allowed = utils.get_allowed_slots(user_id)
     sessions = database.get_sessions(user_id)
