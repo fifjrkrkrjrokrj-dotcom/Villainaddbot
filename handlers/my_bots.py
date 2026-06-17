@@ -129,40 +129,81 @@ async def show_bot_dashboard(event, phone: str, user_id: int, flash_message: Opt
     
     # Configure dashboard buttons
     buttons = []
+    rows = []
     
-    # Start/Stop Button
+    # Row 0: Start/Stop
     if status == "running":
-        buttons.append([utils.styled_button(utils.get_text("btn_stop_bot", lang), f"stop_bot_{phone}", style="danger")])
+        rows.append([("btn_stop_bot", f"stop_bot_{phone}", "danger")])
     else:
-        buttons.append([utils.styled_button(utils.get_text("btn_start_bot", lang), f"start_bot_{phone}", style="success")])
+        rows.append([("btn_start_bot", f"start_bot_{phone}", "success")])
         
-    buttons.extend([
-        [
-            utils.styled_button(utils.get_text("btn_set_broadcast", lang), f"set_broadcast_{phone}", style="primary"),
-            utils.styled_button(utils.get_text("btn_set_welcome", lang), f"set_welcome_{phone}", style="primary")
-        ],
-        [
-            utils.styled_button(utils.get_text("btn_toggle_spam", lang, state=auto_spam), f"toggle_spam_{phone}", style="primary"),
-            utils.styled_button(utils.get_text("btn_toggle_welcome", lang, state=auto_welcome), f"toggle_welcome_{phone}", style="primary")
-        ],
-        [
-            utils.styled_button(utils.get_text("btn_toggle_vc", lang, state=vc_join), f"toggle_vc_{phone}", style="primary"),
-            utils.styled_button(utils.get_text("btn_toggle_tag", lang, state=tag_reply), f"toggle_tag_{phone}", style="primary")
-        ],
-        [
-            utils.styled_button(utils.get_text("btn_set_tag_msg", lang), f"set_tag_msg_{phone}", style="primary"),
-            utils.styled_button(utils.get_text("btn_change_name", lang), f"change_name_{phone}", style="primary")
-        ],
-        [
-            utils.styled_button(utils.get_text("btn_set_interval", lang), f"set_interval_{phone}", style="primary"),
-            utils.styled_button(utils.get_text("btn_toggle_gpt", lang, state=gpt_enabled), f"toggle_gpt_{phone}", style="primary")
-        ],
-        [
-            utils.styled_button(utils.get_text("btn_refresh_stats", lang), f"refresh_stats_{phone}", style="primary"),
-            utils.styled_button(utils.get_text("btn_delete_bot", lang), f"delete_bot_{phone}", style="danger")
-        ],
-        [utils.styled_button(utils.get_text("btn_back_to_bots", lang), "menu_my_bots", style="primary")]
+    # Row 1: Set Broadcast, Set Welcome
+    rows.append([
+        ("btn_set_broadcast", f"set_broadcast_{phone}"),
+        ("btn_set_welcome", f"set_welcome_{phone}")
     ])
+    
+    # Row 2: Auto-Spam, Auto-Welcome
+    rows.append([
+        ("btn_toggle_spam", f"toggle_spam_{phone}", auto_spam),
+        ("btn_toggle_welcome", f"toggle_welcome_{phone}", auto_welcome)
+    ])
+    
+    # Row 3: VC Join, Tag Reply
+    rows.append([
+        ("btn_toggle_vc", f"toggle_vc_{phone}", vc_join),
+        ("btn_toggle_tag", f"toggle_tag_{phone}", tag_reply)
+    ])
+    
+    # Row 4: Set Tag Msg, Change Name
+    rows.append([
+        ("btn_set_tag_msg", f"set_tag_msg_{phone}"),
+        ("btn_change_name", f"change_name_{phone}")
+    ])
+    
+    # Row 5: Set Interval, GPT Mode
+    rows.append([
+        ("btn_set_interval", f"set_interval_{phone}"),
+        ("btn_toggle_gpt", f"toggle_gpt_{phone}", gpt_enabled)
+    ])
+    
+    # Row 6: Refresh Stats, Delete Bot
+    rows.append([
+        ("btn_refresh_stats", f"refresh_stats_{phone}"),
+        ("btn_delete_bot", f"delete_bot_{phone}", None, "danger")
+    ])
+    
+    # Row 7: Back to Bots
+    rows.append([
+        ("btn_back_to_bots", "menu_my_bots", None, "primary")
+    ])
+
+    styles = ["success", "danger", "primary"]
+    for i, row in enumerate(rows):
+        row_style = styles[i % len(styles)]
+        row_buttons = []
+        for item in row:
+            key = item[0]
+            callback = item[1]
+            state = item[2] if len(item) > 2 else None
+            override_style = item[3] if len(item) > 3 else None
+            
+            if key == "btn_start_bot":
+                style = "success"
+            elif key in ("btn_stop_bot", "btn_delete_bot"):
+                style = "danger"
+            elif override_style:
+                style = override_style
+            else:
+                style = row_style
+                
+            if state is not None:
+                label = utils.get_text(key, lang, state=state)
+            else:
+                label = utils.get_text(key, lang)
+                
+            row_buttons.append(utils.styled_button(label, callback, style=style))
+        buttons.append(row_buttons)
     
     try:
         await event.edit(text, buttons=buttons)
