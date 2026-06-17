@@ -218,3 +218,39 @@ def allocate_slots_subscription(user_id: int, qty: int, days: int, plan_name: st
     
     database.save_user(user)
     return expires_at
+
+# ─── TELETHON PATTERN MATCH MONKEYPATCH ──────────────────────────────────
+# Intercepts Telethon's CallbackQuery.Event pattern_match and wraps it
+# so that all matched groups are automatically decoded from bytes to str.
+# This prevents binary/bytes data from corrupting JSON database files.
+from telethon import events
+
+class DecodedMatch:
+    def __init__(self, original_match):
+        self._match = original_match
+        
+    def group(self, *args):
+        res = self._match.group(*args)
+        if isinstance(res, bytes):
+            return res.decode("utf-8")
+        if isinstance(res, tuple):
+            return tuple(x.decode("utf-8") if isinstance(x, bytes) else x for x in res)
+        return res
+        
+    def groups(self, default=None):
+        res = self._match.groups(default)
+        return tuple(x.decode("utf-8") if isinstance(x, bytes) else x for x in res)
+        
+    def __getattr__(self, name):
+        return getattr(self._match, name)
+
+def get_pattern_match(self):
+    orig = self.__dict__.get("pattern_match")
+    if orig is not None:
+        return DecodedMatch(orig)
+    return None
+
+def set_pattern_match(self, value):
+    self.__dict__["pattern_match"] = value
+
+events.CallbackQuery.Event.pattern_match = property(get_pattern_match, set_pattern_match)

@@ -73,8 +73,9 @@ def _read_json(table: str) -> List[Dict[str, Any]]:
 def _write_json(table: str, data: List[Dict[str, Any]]):
     path = JSON_FILES[table]
     try:
+        serialized = json.dumps(data, indent=4)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+            f.write(serialized)
     except Exception as e:
         logger.error(f"Error writing JSON file {path}: {e}")
 
