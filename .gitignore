@@ -1,0 +1,21 @@
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment and Secrets
+.env
+
+# Local JSON database fallbacks
+db_*.json
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+
+# IDE/OS files
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini

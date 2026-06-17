@@ -1,0 +1,220 @@
+import os
+import logging
+from typing import Optional
+from telethon import Button
+import config
+import database
+from translations import TRANSLATIONS
+
+logger = logging.getLogger(__name__)
+
+def styled_button(text: str, callback_data: str, style: str = "primary"):
+    """
+    Creates an inline button. Handles cases where the current Telethon library version
+    does not support a 'style' parameter natively in Button.inline by attaching it as an attribute.
+    """
+    try:
+        return Button.inline(text, data=callback_data, style=style)
+    except TypeError:
+        # Standard Telethon fallback
+        btn = Button.inline(text, data=callback_data)
+        setattr(btn, "style", style)
+        return btn
+
+def get_text(key: str, lang: Optional[str] = "en", **kwargs) -> str:
+    """
+    Retrieves the localized text for the given key and language.
+    Falls back to English if the translation is missing.
+    """
+    lang = lang or "en"
+    if lang not in TRANSLATIONS:
+        lang = "en"
+        
+    text = TRANSLATIONS[lang].get(key) or TRANSLATIONS["en"].get(key)
+    if text is None:
+        return f"[{key}]"
+        
+    try:
+        return text.format(**kwargs)
+    except Exception as e:
+        logger.error(f"Formatting error for translation key '{key}': {e}")
+        return text
+
+async def show_help(event, action_key: str, user_id: int):
+    """
+    Displays the 'How to Use' hint for a button click.
+    Uses event.answer(text, alert=...) to present a popup to the user.
+    """
+    user = database.get_user(user_id)
+    lang = user.get("language") if user else "en"
+    
+    # Form the translation key
+    help_key = f"help_{action_key}"
+    hint = get_text(help_key, lang)
+    
+    # Fallback to generic message if missing
+    if hint.startswith(f"[help_"):
+        hint = "Click to proceed."
+        
+    # Determine alert level: alert=True for risky/important actions, False for subtle
+    show_alert = False
+    risky_keywords = ["delete", "stop", "reject", "remove", "danger", "cancel"]
+    if any(k in action_key.lower() for k in risky_keywords):
+        show_alert = True
+        
+    try:
+        await event.answer(hint, alert=show_alert)
+    except Exception as e:
+        logger.error(f"Failed to show callback help alert: {e}")
+
+def ensure_user_dir(user_id: int) -> str:
+    """
+    Ensures that the user's sessions directory exists locally and returns the path.
+    """
+    path = os.path.join(config.USER_DATA_DIR, str(user_id), "sessions")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+async def check_force_sub(client, user_id: int) -> list:
+    """
+    Checks if a user is subscribed to all force subscribe channels defined by admin.
+    """
+    from telethon.tl.functions.channels import GetParticipantRequest
+    from telethon.errors import UserNotParticipantError
+    
+    not_joined = []
+    channels = database.get_force_channels()
+    for ch in channels:
+        ch_id = ch["channel_id"]
+        try:
+            peer = int(ch_id) if (ch_id.startswith("-") or ch_id.isdigit()) else ch_id
+            await client(GetParticipantRequest(
+                channel=peer,
+                participant=user_id
+            ))
+        except (UserNotParticipantError, Exception) as e:
+            logger.debug(f"User {user_id} not in channel {ch_id}: {e}")
+            not_joined.append(ch)
+    return not_joined
+
+async def send_force_sub_msg(event, not_joined: list, lang: str):
+    """
+    Sends a restricted-access message with URLs to join and a verify button.
+    """
+    buttons = []
+    for i, ch in enumerate(not_joined, 1):
+        label = ch.get("channel_name") or f"Channel {i}"
+        link = ch.get("channel_link")
+        buttons.append([Button.url(f"➕ Join {label}", url=link)])
+        
+    buttons.append([styled_button("✅ I've Joined — Verify", "verify_sub", style="success")])
+    
+    lines = [
+        "⚠️ **Access Restricted**\n━━━━━━━━━━━━━━━━━━━━\nJoin these channels to use the bot:\n"
+    ]
+    for ch in not_joined:
+        lines.append(f"• {ch.get('channel_name') or ch.get('channel_id')}")
+    lines.append("\n━━━━━━━━━━━━━━━━━━━━\n_Tap Verify after joining._")
+    
+    await event.respond("\n".join(lines), buttons=buttons)
+
+async def guard(event, client) -> bool:
+    """
+    Applies security filters to commands/callbacks: bans, maintenance mode, and force subs.
+    Returns True if execution should be blocked.
+    """
+    user_id = event.sender_id
+    if not user_id:
+        return False
+        
+    user = database.get_user(user_id)
+    if not user:
+        import models
+        user = models.create_default_user(user_id)
+        database.save_user(user)
+        
+    # 1. Ban Guard
+    if user.get("is_banned", False):
+        txt = "🚫 You are banned from using this bot."
+        if hasattr(event, "answer"):
+            try:
+                await event.answer(txt, alert=True)
+            except Exception:
+                await event.respond(txt)
+        else:
+            await event.respond(txt)
+        return True
+        
+    # 2. Maintenance Guard
+    global_settings = database.get_global_settings()
+    admins = global_settings.get("admins", [])
+    is_admin = user_id in admins or user_id in config.ORIGINAL_ADMIN_IDS
+    
+    if global_settings.get("maintenance_mode", False) and not is_admin:
+        txt = "🔧 Bot is under maintenance. Please try again later."
+        if hasattr(event, "answer"):
+            try:
+                await event.answer(txt, alert=True)
+            except Exception:
+                await event.respond(txt)
+        else:
+            await event.respond(txt)
+        return True
+        
+    # 3. Force Subscribe Guard
+    if not is_admin:
+        not_joined = await check_force_sub(client, user_id)
+        if not_joined:
+            await send_force_sub_msg(event, not_joined, user.get("language", "en") or "en")
+            return True
+            
+    return False
+
+def get_allowed_slots(user_id: int) -> int:
+    """
+    Calculates the user's allowed bot slots dynamically based on active subscriptions.
+    Automatically cleans up expired subscriptions.
+    """
+    user = database.get_user(user_id)
+    if not user:
+        return 1
+        
+    import time
+    now = time.time()
+    subs = user.get("subscriptions", [])
+    active_subs = []
+    active_slots = 0
+    
+    for sub in subs:
+        if sub.get("expires_at", 0) > now:
+            active_slots += sub.get("qty", 0)
+            active_subs.append(sub)
+            
+    # Save cleaned up list to DB if changes occurred
+    if len(active_subs) != len(subs):
+        user["subscriptions"] = active_subs
+        database.save_user(user)
+        
+    return 1 + active_slots
+
+def allocate_slots_subscription(user_id: int, qty: int, days: int, plan_name: str, payment_id: str) -> float:
+    """
+    Allocates slot subscription to a user and returns the expires_at timestamp.
+    """
+    user = database.get_user(user_id)
+    if not user:
+        return 0.0
+        
+    import time
+    subs = user.setdefault("subscriptions", [])
+    expires_at = time.time() + (days * 86400)
+    
+    subs.append({
+        "subscription_id": payment_id,
+        "qty": qty,
+        "expires_at": expires_at,
+        "plan_name": plan_name
+    })
+    
+    database.save_user(user)
+    return expires_at

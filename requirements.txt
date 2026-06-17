@@ -1,0 +1,4 @@
+telethon
+nest_asyncio
+pymongo
+python-dotenv
