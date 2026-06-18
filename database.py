@@ -25,7 +25,10 @@ def db_init():
         _mongo_client = MongoClient(config.MONGODB_URI, serverSelectionTimeoutMS=5000)
         # Force a connection check
         _mongo_client.server_info()
-        _db = _mongo_client.get_database()
+        try:
+            _db = _mongo_client.get_database()
+        except Exception:
+            _db = _mongo_client.get_database("villain_bot")
         logger.info("Successfully connected to MongoDB.")
         
         # Initialize default settings if not exists
