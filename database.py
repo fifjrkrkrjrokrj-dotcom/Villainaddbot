@@ -133,3 +133,18 @@ def save_coupon_usage(code: str, user_id: int):
         "timestamp": time.time()
     }
     _db.coupon_usage.insert_one(data)
+
+# ==================== User Referral & Lookup Helpers ====================
+def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    """
+    Looks up a user by username in a case-insensitive manner.
+    """
+    username = username.strip().replace("@", "")
+    import re
+    return _db.users.find_one({"username": re.compile(f"^{username}$", re.IGNORECASE)})
+
+def count_referred_users(user_id: int) -> int:
+    """
+    Counts the number of users referred by the given user_id.
+    """
+    return _db.users.count_documents({"referred_by": user_id})

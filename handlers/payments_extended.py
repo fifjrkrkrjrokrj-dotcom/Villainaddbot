@@ -142,13 +142,7 @@ def register_handlers(client):
         lang = user.get("language", "en") if user else "en"
         
         # Calculate stats
-        users_list = database.get_sessions() # We search all users in database
-        # Fetch total referred users
-        # For fallbacks/safety, query all user records in DB
-        # If JSON fallback:
-        all_users = database._read_json("users") if not database._use_mongodb else list(database._db.users.find({}))
-        referred_count = sum(1 for u in all_users if u.get("referred_by") == user_id)
-        
+        referred_count = database.count_referred_users(user_id)
         earnings = user.get("referral_earnings", 0.0)
         
         # Generate referral link
@@ -160,14 +154,16 @@ def register_handlers(client):
         comm_rate = global_settings.get("referral_commission", 0.10) * 100
         
         text = (
-            f"👥 **Your Referrals**\n"
+            f"👥 **Refer & Earn Program**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔗 Your Link: `{ref_link}`\n"
+            f"🔗 Your Referral Link:\n`{ref_link}`\n\n"
+            f"💰 Get **₹1.00** instantly when a new user starts the bot using your link!\n"
+            f"📈 Also earn **{comm_rate:.0f}%** commission on all their slot upgrades!\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
             f"👤 Total referred: **{referred_count}**\n"
-            f"💰 Total commission earned: **₹{earnings:.2f}**\n"
-            f"📊 Commission Rate: **{comm_rate:.0f}%** on upgrades\n"
+            f"👛 Total referral earnings: **₹{earnings:.2f}**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"_Share your link to earn wallet balance!_"
+            f"_Share your link and start earning wallet balance to buy slots!_"
         )
         
         kb = [

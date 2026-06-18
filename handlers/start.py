@@ -80,7 +80,8 @@ async def show_main_menu(event, user_id):
         ],
         [
             styled_button(get_text("btn_settings", lang), "menu_settings", style="primary"),
-            styled_button(get_text("btn_status", lang), "menu_status", style="primary")
+            styled_button(get_text("btn_status", lang), "menu_status", style="primary"),
+            styled_button("👫 Refer & Earn", "settings_referrals", style="primary")
         ],
         [
             Button.url(get_text("btn_owner", lang), "https://t.me/v90001"),
@@ -113,7 +114,21 @@ async def show_main_menu(event, user_id):
 def register_handlers(client):
     @client.on(events.NewMessage(pattern="/start"))
     async def start_cmd(event):
+        # Handle group start commands by offering a start in DM button
         if not event.is_private:
+            try:
+                me = await client.get_me()
+                bot_username = me.username
+                text = (
+                    "📱 **Villain UserBot Manager**\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    "Configure your own automated userbots, group broadcasts, auto-welcome, and AI automations!\n\n"
+                    "⚠️ **Note**: Settings can only be configured in direct messages (DM)."
+                )
+                buttons = [[Button.url("🚀 Start in DM", url=f"https://t.me/{bot_username}?start=true")]]
+                await event.reply(text, buttons=buttons)
+            except Exception as e:
+                logger.error(f"Failed to respond to start command in group: {e}")
             return
             
         user_id = event.sender_id
@@ -128,15 +143,46 @@ def register_handlers(client):
                 except ValueError:
                     pass
                     
+        # Get sender details for username mapping
+        sender = await event.get_sender()
+        sender_username = sender.username if sender else None
+        sender_first = sender.first_name if sender else None
+        sender_last = sender.last_name if sender else None
+        
         user = database.get_user(user_id)
         if not user:
             user = models.create_default_user(user_id)
+            user["username"] = sender_username
+            user["first_name"] = sender_first
+            user["last_name"] = sender_last
+            
             if ref_id and ref_id != user_id:
                 ref_parent = database.get_user(ref_id)
                 if ref_parent:
                     user["referred_by"] = ref_id
-                    logger.info(f"New user {user_id} referred by parent admin/user {ref_id}")
+                    # Instantly credit ₹1.00 referral bonus to referrer
+                    ref_parent["wallet_balance"] = ref_parent.get("wallet_balance", 0.0) + 1.0
+                    ref_parent["referral_earnings"] = ref_parent.get("referral_earnings", 0.0) + 1.0
+                    database.save_user(ref_parent)
+                    logger.info(f"New user {user_id} referred by {ref_id}. Credited ₹1 to referrer.")
+                    
+                    try:
+                        await client.send_message(
+                            ref_id,
+                            f"🎁 **New Referral!**\n"
+                            f"A new user started the bot using your referral link.\n"
+                            f"**₹1.00** has been credited to your wallet balance."
+                        )
+                    except Exception as ref_err:
+                        logger.warning(f"Could not notify referrer {ref_id}: {ref_err}")
             database.save_user(user)
+        else:
+            # Update username details if changed
+            if user.get("username") != sender_username or user.get("first_name") != sender_first or user.get("last_name") != sender_last:
+                user["username"] = sender_username
+                user["first_name"] = sender_first
+                user["last_name"] = sender_last
+                database.save_user(user)
             
         # Security verification checks (bans, maintenance, force subscribe)
         import utils

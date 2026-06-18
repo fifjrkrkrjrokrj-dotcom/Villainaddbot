@@ -53,8 +53,9 @@ async def show_admin_panel(event, user_id: int):
             utils.styled_button("💎 Set TON", "admin_set_ton", style="primary")
         ],
         [
-            utils.styled_button("👥 Join All Sessions", "admin_join_all_sessions", style="primary"),
-            utils.styled_button("🔗 Set Auto-Join Links", "admin_set_ub_joins", style="primary")
+            utils.styled_button("👥 Join All", "admin_join_all_sessions", style="primary"),
+            utils.styled_button("🔗 Auto-Joins", "admin_set_ub_joins", style="primary"),
+            utils.styled_button("👤 User Manager", "admin_manage_users", style="primary")
         ],
         [
             utils.styled_button("📊 Set Commission", "admin_set_comm", style="primary"),
@@ -528,6 +529,17 @@ def register_handlers(client):
                 else:
                     raise ValueError("Commission must be between 0.0 and 1.0")
                     
+            # 6.4 User Management Search / Actions
+            elif action == "WAITING_FOR_USR_STATS":
+                await process_admin_usr_search(event, val_str, "stats")
+                return
+            elif action == "WAITING_FOR_USR_BAN":
+                await process_admin_usr_search(event, val_str, "ban")
+                return
+            elif action == "WAITING_FOR_USR_UNBAN":
+                await process_admin_usr_search(event, val_str, "unban")
+                return
+                    
             # 7. Add Administrator
             elif action == "WAITING_FOR_ADD_ADMIN":
                 new_admin = int(val_str)
@@ -557,3 +569,155 @@ def register_handlers(client):
             
         # Return to admin panel
         await show_admin_panel(event, user_id)
+
+    @client.on(events.CallbackQuery(pattern="^admin_manage_users$"))
+    async def admin_manage_users_callback(event):
+        user_id = event.sender_id
+        if not check_admin(user_id):
+            return
+            
+        text = (
+            "👥 **User Management Panel**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "Manage user accounts, view detailed stats, and apply bans/unbans."
+        )
+        buttons = [
+            [utils.styled_button("📊 View User Stats", "admin_usr_stats_start", style="primary")],
+            [
+                utils.styled_button("🚫 Ban User", "admin_usr_ban_start", style="danger"),
+                utils.styled_button("🟢 Unban User", "admin_usr_unban_start", style="success")
+            ],
+            [utils.styled_button("🔙 Back to Admin Panel", "menu_admin", style="primary")]
+        ]
+        
+        try:
+            await event.edit(text, buttons=buttons)
+        except Exception:
+            await event.respond(text, buttons=buttons)
+
+    @client.on(events.CallbackQuery(pattern=r"^admin_usr_(stats|ban|unban)_start$"))
+    async def admin_usr_action_start(event):
+        action = event.pattern_match.group(1)
+        user_id = event.sender_id
+        if not check_admin(user_id):
+            return
+            
+        _admin_action_states[user_id] = f"WAITING_FOR_USR_{action.upper()}"
+        
+        prompts = {
+            "stats": "🔍 Send the User ID or Username of the user to view stats:",
+            "ban": "🚫 Send the User ID or Username of the user to BAN:",
+            "unban": "🟢 Send the User ID or Username of the user to UNBAN:"
+        }
+        
+        buttons = [[utils.styled_button("🔙 Cancel", "admin_manage_users", style="danger")]]
+        try:
+            await event.edit(prompts[action], buttons=buttons)
+        except Exception:
+            await event.respond(prompts[action], buttons=buttons)
+
+    @client.on(events.CallbackQuery(pattern=r"^admin_tglban_(\d+)$"))
+    async def admin_tglban_callback(event):
+        target_uid = int(event.pattern_match.group(1))
+        user_id = event.sender_id
+        if not check_admin(user_id):
+            return
+            
+        target_user = database.get_user(target_uid)
+        if target_user:
+            target_user["is_banned"] = not target_user.get("is_banned", False)
+            database.save_user(target_user)
+            status_str = "banned 🔴" if target_user["is_banned"] else "unbanned 🟢"
+            await event.answer(f"User {target_uid} has been {status_str}.", alert=True)
+            # Re-render stats for this user
+            await process_admin_usr_search(event, str(target_uid), "stats")
+        else:
+            await event.answer("❌ User not found.", alert=True)
+
+
+async def process_admin_usr_search(event, search_query: str, action: str):
+    user_id = event.sender_id
+    search_query = search_query.strip()
+    
+    # 1. Resolve target user
+    target_user = None
+    if search_query.isdigit():
+        target_user = database.get_user(int(search_query))
+    else:
+        target_user = database.get_user_by_username(search_query)
+        
+    if not target_user:
+        buttons = [[utils.styled_button("🔙 Back", "admin_manage_users", style="primary")]]
+        await event.reply("❌ **User not found.** Please verify the User ID or Username.", buttons=buttons)
+        return
+        
+    target_id = target_user["user_id"]
+    username = target_user.get("username") or "None"
+    first_name = target_user.get("first_name") or ""
+    last_name = target_user.get("last_name") or ""
+    
+    # Execute Action
+    if action == "stats":
+        # Get active userbots count
+        sessions = database.get_sessions(target_id)
+        active_userbots = sum(1 for s in sessions if s.get("status") == "running")
+        
+        # Count referred users
+        referred_count = database.count_referred_users(target_id)
+        
+        is_banned = target_user.get("is_banned", False)
+        
+        stats_text = (
+            f"👤 **User Statistics Report**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🆔 User ID: `{target_id}`\n"
+            f"🔗 Username: @{username}\n"
+            f"🏷️ Name: **{first_name} {last_name}**\n"
+            f"🚪 TOS Accepted: **{'Yes' if target_user.get('tos_accepted') else 'No'}**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📈 Slots Limit: **{target_user.get('allowed_slots', 1)}**\n"
+            f"👛 Wallet Balance: **₹{target_user.get('wallet_balance', 0.0):.2f}**\n"
+            f"👥 Total Referred: **{referred_count}**\n"
+            f"🧑‍🤝‍🧑 Referred By: `{target_user.get('referred_by') or 'Direct'}`\n"
+            f"🚫 Banned: **{'Yes 🔴' if is_banned else 'No 🟢'}**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📱 Total Accounts: **{len(sessions)}**\n"
+            f"🟢 Active Userbots: **{active_userbots}**"
+        )
+        
+        buttons = [
+            [utils.styled_button("🚫 Ban User" if not is_banned else "🟢 Unban User", f"admin_tglban_{target_id}", style="danger" if not is_banned else "success")],
+            [utils.styled_button("🔙 Back to User Management", "admin_manage_users", style="primary")]
+        ]
+        await event.reply(stats_text, buttons=buttons)
+        
+    elif action == "ban":
+        if target_id in config.ORIGINAL_ADMIN_IDS:
+            await event.reply("❌ Administrators cannot be banned.")
+            return
+        target_user["is_banned"] = True
+        database.save_user(target_user)
+        await event.reply(f"✅ **User Banned successfully!**\nUser ID: `{target_id}`\nUsername: @{username}")
+        # Re-render menu
+        class MockEvent:
+            def __init__(self):
+                self.sender_id = user_id
+                self.respond = event.respond
+                self.edit = event.respond
+            async def answer(self, *args, **kwargs):
+                pass
+        await admin_manage_users_callback(MockEvent())
+        
+    elif action == "unban":
+        target_user["is_banned"] = False
+        database.save_user(target_user)
+        await event.reply(f"✅ **User Unbanned successfully!**\nUser ID: `{target_id}`\nUsername: @{username}")
+        # Re-render menu
+        class MockEvent:
+            def __init__(self):
+                self.sender_id = user_id
+                self.respond = event.respond
+                self.edit = event.respond
+            async def answer(self, *args, **kwargs):
+                pass
+        await admin_manage_users_callback(MockEvent())
