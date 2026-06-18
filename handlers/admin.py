@@ -539,6 +539,52 @@ def register_handlers(client):
             elif action == "WAITING_FOR_USR_UNBAN":
                 await process_admin_usr_search(event, val_str, "unban")
                 return
+            elif action == "WAITING_FOR_USR_BAL":
+                await process_admin_usr_search(event, val_str, "bal")
+                return
+                
+            # 6.5 User Balance Editing (+/-)
+            elif action.startswith("WAITING_FOR_EDITBAL_"):
+                parts = action.split("_")
+                edit_type = parts[3]
+                target_uid = int(parts[4])
+                
+                try:
+                    amount = float(val_str)
+                    if amount <= 0:
+                        raise ValueError("Amount must be positive")
+                except ValueError:
+                    await event.reply("❌ Invalid amount. Please send a valid positive number.")
+                    return
+                    
+                target_user = database.get_user(target_uid)
+                if not target_user:
+                    await event.reply("❌ Target user not found in database.")
+                    return
+                    
+                current_bal = target_user.get("wallet_balance", 0.0)
+                if edit_type == "ADDBAL":
+                    new_bal = current_bal + amount
+                    success_msg = f"✅ **Successfully added ₹{amount:.2f} to user's wallet!**\nNew Balance: **₹{new_bal:.2f}**"
+                else:
+                    new_bal = max(0.0, current_bal - amount)
+                    success_msg = f"✅ **Successfully subtracted ₹{amount:.2f} from user's wallet!**\nNew Balance: **₹{new_bal:.2f}**"
+                    
+                target_user["wallet_balance"] = new_bal
+                database.save_user(target_user)
+                
+                await event.reply(success_msg)
+                
+                # Re-render balance management screen
+                class MockEvent:
+                    def __init__(self):
+                        self.sender_id = user_id
+                        self.respond = event.reply
+                        self.edit = event.reply
+                    async def answer(self, *args, **kwargs):
+                        pass
+                await process_admin_usr_search(MockEvent(), str(target_uid), "bal")
+                return
                     
             # 7. Add Administrator
             elif action == "WAITING_FOR_ADD_ADMIN":
@@ -582,7 +628,10 @@ def register_handlers(client):
             "Manage user accounts, view detailed stats, and apply bans/unbans."
         )
         buttons = [
-            [utils.styled_button("📊 View User Stats", "admin_usr_stats_start", style="primary")],
+            [
+                utils.styled_button("📊 View User Stats", "admin_usr_stats_start", style="primary"),
+                utils.styled_button("👛 Check User Balance", "admin_usr_bal_start", style="success")
+            ],
             [
                 utils.styled_button("🚫 Ban User", "admin_usr_ban_start", style="danger"),
                 utils.styled_button("🟢 Unban User", "admin_usr_unban_start", style="success")
@@ -595,7 +644,7 @@ def register_handlers(client):
         except Exception:
             await event.respond(text, buttons=buttons)
 
-    @client.on(events.CallbackQuery(pattern=r"^admin_usr_(stats|ban|unban)_start$"))
+    @client.on(events.CallbackQuery(pattern=r"^admin_usr_(stats|ban|unban|bal)_start$"))
     async def admin_usr_action_start(event):
         action = event.pattern_match.group(1)
         user_id = event.sender_id
@@ -607,7 +656,8 @@ def register_handlers(client):
         prompts = {
             "stats": "🔍 Send the User ID or Username of the user to view stats:",
             "ban": "🚫 Send the User ID or Username of the user to BAN:",
-            "unban": "🟢 Send the User ID or Username of the user to UNBAN:"
+            "unban": "🟢 Send the User ID or Username of the user to UNBAN:",
+            "bal": "👛 Send the User ID or Username of the user to view and edit balance:"
         }
         
         buttons = [[utils.styled_button("🔙 Cancel", "admin_manage_users", style="danger")]]
@@ -633,6 +683,42 @@ def register_handlers(client):
             await process_admin_usr_search(event, str(target_uid), "stats")
         else:
             await event.answer("❌ User not found.", alert=True)
+
+    @client.on(events.CallbackQuery(pattern=r"^admin_usr_(addbal|subbal)_(\d+)$"))
+    async def admin_usr_editbal_callback(event):
+        action = event.pattern_match.group(1)
+        target_uid = int(event.pattern_match.group(2))
+        user_id = event.sender_id
+        if not check_admin(user_id):
+            return
+            
+        target_user = database.get_user(target_uid)
+        if not target_user:
+            await event.answer("❌ User not found.", alert=True)
+            return
+            
+        _admin_action_states[user_id] = f"WAITING_FOR_EDITBAL_{action.upper()}_{target_uid}"
+        
+        prompt_text = (
+            f"👛 **{'Add' if action == 'addbal' else 'Subtract'} Balance**\n"
+            f"User ID: `{target_uid}`\n"
+            f"Current Balance: **₹{target_user.get('wallet_balance', 0.0):.2f}**\n\n"
+            f"Send the amount in ₹ to {'add' if action == 'addbal' else 'subtract'}:"
+        )
+        
+        buttons = [[utils.styled_button("🔙 Cancel", f"admin_usr_stats_back_{target_uid}", style="danger")]]
+        try:
+            await event.edit(prompt_text, buttons=buttons)
+        except Exception:
+            await event.respond(prompt_text, buttons=buttons)
+
+    @client.on(events.CallbackQuery(pattern=r"^admin_usr_stats_back_(\d+)$"))
+    async def admin_usr_stats_back_callback(event):
+        target_uid = event.pattern_match.group(1)
+        user_id = event.sender_id
+        if not check_admin(user_id):
+            return
+        await process_admin_usr_search(event, str(target_uid), "bal")
 
 
 async def process_admin_usr_search(event, search_query: str, action: str):
@@ -721,3 +807,24 @@ async def process_admin_usr_search(event, search_query: str, action: str):
             async def answer(self, *args, **kwargs):
                 pass
         await admin_manage_users_callback(MockEvent())
+
+    elif action == "bal":
+        wallet_bal = target_user.get("wallet_balance", 0.0)
+        bal_text = (
+            f"👛 **User Balance Management**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🆔 User ID: `{target_id}`\n"
+            f"🔗 Username: @{username}\n"
+            f"🏷️ Name: **{first_name} {last_name}**\n"
+            f"👛 Current Balance: **₹{wallet_bal:.2f}**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Choose an option below to add or subtract balance:"
+        )
+        buttons = [
+            [
+                utils.styled_button("➕ Add Balance", f"admin_usr_addbal_{target_id}", style="success"),
+                utils.styled_button("➖ Subtract Balance", f"admin_usr_subbal_{target_id}", style="danger")
+            ],
+            [utils.styled_button("🔙 Back to User Management", "admin_manage_users", style="primary")]
+        ]
+        await event.reply(bal_text, buttons=buttons)

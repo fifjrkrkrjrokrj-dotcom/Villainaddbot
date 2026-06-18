@@ -37,7 +37,11 @@ def register_handlers(client):
         user_lang = user_record.get("language", "en") if user_record else "en"
         
         # 3. Apply decision
-        admin_mention = f"[{admin_id}](tg://user?id={admin_id})"
+        try:
+            admin_user = await event.get_sender()
+            admin_username = f"@{admin_user.username}" if admin_user and admin_user.username else f"[{admin_id}](tg://user?id={admin_id})"
+        except Exception:
+            admin_username = f"[{admin_id}](tg://user?id={admin_id})"
         
         if decision == "approve":
             payment_req["status"] = "approved"
@@ -52,12 +56,15 @@ def register_handlers(client):
                     user_id, qty, days, plan_name, payment_id
                 )
                 
-            await event.answer("✅ Request approved!", alert=False)
+            try:
+                await event.answer("✅ Request approved!", alert=False)
+            except Exception:
+                pass
             
             # Edit the log message to confirm approval
             try:
-                original_text = event.message.text if event.message else "Payment Request"
-                status_text = utils.get_text("payment_approved_log", "en", admin=admin_mention)
+                original_text = event.message.text if event.message else "Payment Verification Request"
+                status_text = f"✅ **Approved by {admin_username}**"
                 await event.edit(f"{original_text}\n\n{status_text}")
             except Exception as e:
                 logger.error(f"Failed to edit approval log message: {e}")
@@ -79,12 +86,15 @@ def register_handlers(client):
             payment_req["status"] = "rejected"
             database.save_payment_request(payment_req)
             
-            await event.answer("❌ Request rejected.", alert=False)
+            try:
+                await event.answer("❌ Request rejected.", alert=False)
+            except Exception:
+                pass
             
             # Edit the log message to confirm rejection
             try:
-                original_text = event.message.text if event.message else "Payment Request"
-                status_text = utils.get_text("payment_rejected_log", "en", admin=admin_mention)
+                original_text = event.message.text if event.message else "Payment Verification Request"
+                status_text = f"❌ **Rejected by {admin_username}**"
                 await event.edit(f"{original_text}\n\n{status_text}")
             except Exception as e:
                 logger.error(f"Failed to edit rejection log message: {e}")

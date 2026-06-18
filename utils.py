@@ -54,10 +54,6 @@ async def show_help(event, action_key: str, user_id: int):
     
     # Fallback to generic message if missing
     if hint.startswith(f"[help_"):
-        try:
-            await event.answer()
-        except Exception as e:
-            logger.error(f"Failed to answer callback silently: {e}")
         return
         
     # Determine alert level: alert=True for risky/important actions, False for subtle
