@@ -25,6 +25,15 @@ async def check_onboarding(client, event) -> bool:
                 styled_button("English 🇬🇧", "set_lang_en", style="primary"),
                 styled_button("Hindi 🇮🇳", "set_lang_hi", style="primary"),
                 styled_button("Russian 🇷🇺", "set_lang_ru", style="primary")
+            ],
+            [
+                styled_button("Japanese 🇯🇵", "set_lang_ja", style="primary"),
+                styled_button("French 🇫🇷", "set_lang_fr", style="primary"),
+                styled_button("German 🇩🇪", "set_lang_de", style="primary")
+            ],
+            [
+                styled_button("Chinese 🇨🇳", "set_lang_zh", style="primary"),
+                styled_button("Arabic 🇸🇦", "set_lang_ar", style="primary")
             ]
         ]
         msg = get_text("select_lang", "en")
@@ -146,7 +155,7 @@ def register_handlers(client):
         except Exception:
             pass
 
-    @client.on(events.CallbackQuery(pattern=r"^set_lang_(en|hi|ru)$"))
+    @client.on(events.CallbackQuery(pattern=r"^set_lang_(en|hi|ru|ja|fr|de|zh|ar)$"))
     async def set_lang_callback(event):
         lang_code = event.pattern_match.group(1)
         user_id = event.sender_id

@@ -407,9 +407,14 @@ def register_handlers(client):
         }
         
         if method == "upi":
-            address_text = f"🏦 UPI ID: `{global_settings.get('upi_id', 'merchant@upi')}`"
+            upi_id = global_settings.get('upi_id', 'merchant@upi')
+            address_text = f"🏦 UPI ID: `{upi_id}`"
+            import urllib.parse
+            upi_uri = f"upi://pay?pa={upi_id}&pn=VillainUserBot&am={cost_inr:.2f}&cu=INR&tn={payment_id}"
+            qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_uri)}"
         else:
             address_text = f"🪙 USDT (BEP20) Address:\n`{global_settings.get('usdt_bep20_address', '0x000')}`"
+            qr_url = None
             
         text = (
             f"💳 **Make Payment**\n"
@@ -418,11 +423,14 @@ def register_handlers(client):
             f"Amount to Pay: **₹{cost_inr:.2f}**\n"
             f"{address_text}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📸 Send your payment confirmation **screenshot (as a photo)**:"
+            f"📸 Send your payment confirmation **screenshot (as a photo or image link)**:"
         )
         
         buttons = [[utils.styled_button("❌ Cancel", "menu_settings", style="danger")]]
-        await event.respond(text, buttons=buttons)
+        if qr_url:
+            await event.respond(text, file=qr_url, buttons=buttons)
+        else:
+            await event.respond(text, buttons=buttons)
         try:
             await event.delete()
         except Exception:
@@ -445,13 +453,22 @@ def register_handlers(client):
         
         # 1. Screenshot photo input
         if action == "WAITING_FOR_SCREENSHOT":
-            # Must be a photo
-            if not event.photo:
-                await event.reply("❌ Please upload the payment screenshot as a photo.")
+            photo = event.message.photo or event.photo
+            file_to_save = None
+            
+            if photo:
+                file_to_save = photo
+            elif event.text and ("http://" in event.text or "https://" in event.text):
+                import re
+                urls = re.findall(r'(https?://[^\s]+)', event.text)
+                if urls:
+                    file_to_save = urls[0]
+            
+            if not file_to_save:
+                await event.reply("❌ Please upload the payment screenshot as a photo or send a valid image link (e.g. ending in .jpg/.png).")
                 return
                 
-            photo_file_id = event.photo.sizes[-1] # Largest photo size
-            state["photo_file_id"] = event.message.photo[-1].file_id
+            state["photo_file_id"] = file_to_save
             state["action"] = "WAITING_FOR_UTR"
             
             buttons = [[utils.styled_button("❌ Cancel", "menu_settings", style="danger")]]
@@ -462,7 +479,6 @@ def register_handlers(client):
                 buttons=buttons
             )
 
-            
         # 2. UTR transaction code input
         elif action == "WAITING_FOR_UTR":
             utr_code = event.text.strip()
@@ -484,7 +500,10 @@ def register_handlers(client):
             if pay_record:
                 pay_record["method"] = method
                 pay_record["utr_code"] = utr_code
-                pay_record["screenshot"] = photo_file_id
+                if isinstance(photo_file_id, str):
+                    pay_record["screenshot"] = photo_file_id
+                else:
+                    pay_record["screenshot"] = f"photo_{photo_file_id.id}"
                 database.save_payment_request(pay_record)
                 
             # Confirm to User
@@ -513,10 +532,10 @@ def register_handlers(client):
                         ]
                     ]
                     
-                    await client.send_photo(
+                    await client.send_message(
                         log_group_id,
+                        admin_text,
                         file=photo_file_id,
-                        caption=admin_text,
                         buttons=buttons
                     )
                 except Exception as e:

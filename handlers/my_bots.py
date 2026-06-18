@@ -14,6 +14,63 @@ logger = logging.getLogger(__name__)
 # Structure: { user_id: { "phone": str, "action": str } }
 _bot_action_states = {}
 
+async def show_mock_dashboard(event, user_id: int, flash_message: Optional[str] = None):
+    """
+    Renders a mock UserBot control dashboard for unlogged users.
+    """
+    user = database.get_user(user_id)
+    lang = user.get("language", "en") if user else "en"
+    
+    text = ""
+    if flash_message:
+        text += f"{flash_message}\n\n"
+        
+    text += f"🤖 **UserBot Dashboard** (Demo Mode)\nStatus: 🔴 **Stopped / Not Logged In**\n\n__Choose an option below to manage this bot's services:__\n\n⚠️ **{utils.get_text('account_login_first', lang)}**"
+    
+    buttons = [
+        [
+            utils.styled_button("➕ Add / Login Bot", "menu_add_bot", style="success")
+        ],
+        [
+            utils.styled_button(utils.get_text("btn_start_bot", lang), "no_login_start", style="success"),
+            utils.styled_button(utils.get_text("btn_stop_bot", lang), "no_login_stop", style="danger")
+        ],
+        [
+            utils.styled_button(utils.get_text("btn_set_broadcast", lang), "no_login_broadcast", style="primary"),
+            utils.styled_button(utils.get_text("btn_set_welcome", lang), "no_login_welcome", style="primary")
+        ],
+        [
+            utils.styled_button(utils.get_text("btn_toggle_spam", lang, state="❌ OFF"), "no_login_spam", style="primary"),
+            utils.styled_button(utils.get_text("btn_toggle_welcome", lang, state="❌ OFF"), "no_login_welcome_toggle", style="primary")
+        ],
+        [
+            utils.styled_button(utils.get_text("btn_clone_profile", lang), "no_login_clone", style="primary")
+        ],
+        [
+            utils.styled_button(utils.get_text("btn_help", lang), "no_login_help", style="primary"),
+            utils.styled_button(utils.get_text("btn_how_to_use", lang), "no_login_how_to_use", style="primary")
+        ],
+        [
+            utils.styled_button(utils.get_text("btn_change_name", lang), "no_login_name", style="primary"),
+            utils.styled_button(utils.get_text("btn_set_interval", lang), "no_login_interval", style="primary")
+        ],
+        [
+            utils.styled_button(utils.get_text("btn_refresh_stats", lang), "no_login_stats", style="primary"),
+            utils.styled_button(utils.get_text("btn_delete_bot", lang), "no_login_delete", style="danger")
+        ],
+        [
+            utils.styled_button(utils.get_text("back_to_menu", lang), "menu_start", style="primary")
+        ]
+    ]
+    
+    try:
+        if hasattr(event, "edit"):
+            await event.edit(text, buttons=buttons)
+        else:
+            await event.respond(text, buttons=buttons)
+    except Exception:
+        await event.respond(text, buttons=buttons)
+
 async def show_bots_list(event, user_id: int, flash_message: Optional[str] = None):
     """
     Renders the list of added accounts (UserBots) for the user.
@@ -23,17 +80,7 @@ async def show_bots_list(event, user_id: int, flash_message: Optional[str] = Non
     
     sessions = database.get_sessions(user_id)
     if not sessions:
-        # No bots added yet
-        buttons = [[utils.styled_button(utils.get_text("btn_add_bot", lang), "menu_add_bot", style="primary")]]
-        buttons.append([utils.styled_button(utils.get_text("back_to_menu", lang), "menu_start", style="primary")])
-        text = "📱 **You have not added any UserBots yet.**"
-        if flash_message:
-            text = f"{flash_message}\n\n" + text
-            
-        try:
-            await event.edit(text, buttons=buttons)
-        except Exception:
-            await event.respond(text, buttons=buttons)
+        await show_mock_dashboard(event, user_id, flash_message)
         return
         
     text = ""
@@ -146,19 +193,30 @@ async def show_bot_dashboard(event, phone: str, user_id: int, flash_message: Opt
         ("btn_toggle_welcome", f"toggle_welcome_{phone}", auto_welcome)
     ])
     
-    # Row 3: Change Name, Set Interval
+    # Row 3: Clone Profile (New!)
+    rows.append([
+        ("btn_clone_profile", f"clone_profile_{phone}")
+    ])
+    
+    # Row 4: Help & How to Use (New!)
+    rows.append([
+        ("btn_help", f"help_bot_{phone}"),
+        ("btn_how_to_use", f"how_to_use_{phone}")
+    ])
+
+    # Row 5: Change Name, Set Interval
     rows.append([
         ("btn_change_name", f"change_name_{phone}"),
         ("btn_set_interval", f"set_interval_{phone}")
     ])
     
-    # Row 4: Refresh Stats, Delete Bot
+    # Row 6: Refresh Stats, Delete Bot
     rows.append([
         ("btn_refresh_stats", f"refresh_stats_{phone}"),
         ("btn_delete_bot", f"delete_bot_{phone}", None, "danger")
     ])
     
-    # Row 5: Back to Bots
+    # Row 7: Back to Bots
     rows.append([
         ("btn_back_to_bots", "menu_my_bots", None, "primary")
     ])
@@ -198,6 +256,71 @@ async def show_bot_dashboard(event, phone: str, user_id: int, flash_message: Opt
 
 def register_handlers(client):
     
+    # ------------------ New Features / Handlers ------------------
+    @client.on(events.CallbackQuery(pattern="^no_login_"))
+    async def no_login_callback(event):
+        user_id = event.sender_id
+        user = database.get_user(user_id)
+        lang = user.get("language", "en") if user else "en"
+        alert_text = utils.get_text("account_login_first", lang)
+        await event.answer(alert_text, alert=True)
+
+    @client.on(events.CallbackQuery(pattern=r"^help_bot_(.+)$"))
+    async def help_bot_callback(event):
+        phone = event.pattern_match.group(1)
+        user_id = event.sender_id
+        user = database.get_user(user_id)
+        lang = user.get("language", "en") if user else "en"
+        text = utils.get_text("help_dashboard_text", lang)
+        buttons = [[utils.styled_button("🔙 Back", f"select_bot_{phone}", style="primary")]]
+        
+        global_settings = database.get_global_settings()
+        help_image = global_settings.get("help_image")
+        try:
+            if help_image:
+                await event.respond(text, file=help_image, buttons=buttons)
+            else:
+                await event.edit(text, buttons=buttons)
+        except Exception:
+            await event.respond(text, buttons=buttons)
+
+    @client.on(events.CallbackQuery(pattern=r"^how_to_use_(.+)$"))
+    async def how_to_use_callback(event):
+        phone = event.pattern_match.group(1)
+        user_id = event.sender_id
+        user = database.get_user(user_id)
+        lang = user.get("language", "en") if user else "en"
+        text = utils.get_text("how_to_use_text", lang)
+        buttons = [[utils.styled_button("🔙 Back", f"select_bot_{phone}", style="primary")]]
+        try:
+            await event.edit(text, buttons=buttons)
+        except Exception:
+            await event.respond(text, buttons=buttons)
+
+    @client.on(events.CallbackQuery(pattern=r"^clone_profile_(.+)$"))
+    async def clone_profile_callback(event):
+        phone = event.pattern_match.group(1)
+        user_id = event.sender_id
+        user = database.get_user(user_id)
+        lang = user.get("language", "en") if user else "en"
+        
+        if not userbot_manager.is_bot_running(phone):
+            await event.answer("⚠️ Userbot must be running to clone a profile.", alert=True)
+            return
+            
+        _bot_action_states[user_id] = {
+            "phone": phone,
+            "action": "WAITING_FOR_CLONE_TARGET"
+        }
+        
+        prompt_text = "👤 **Clone Profile**\n\nEnter the username (e.g. `@username` or `username`) or User ID of the profile you want to clone:"
+        buttons = [[utils.styled_button("🔙 Cancel", f"select_bot_{phone}", style="danger")]]
+        
+        try:
+            await event.edit(prompt_text, buttons=buttons)
+        except Exception:
+            await event.respond(prompt_text, buttons=buttons)
+
     # ------------------ Navigation ------------------
     @client.on(events.CallbackQuery(pattern="^menu_my_bots$"))
     async def bots_list_callback(event):
@@ -425,6 +548,21 @@ def register_handlers(client):
             database.save_session(sess)
             flash = "👋 **Welcome message updated successfully!**"
             
+        # 3. Clone Profile
+        elif action == "WAITING_FOR_CLONE_TARGET":
+            target = event.text.strip()
+            if not target:
+                await event.reply("❌ Target cannot be empty. Please enter a valid username/ID.")
+                return
+                
+            progress_msg = await event.reply("⏳ **Cloning profile details, please wait...**")
+            success, msg = await userbot_manager.clone_profile(phone, target)
+            await progress_msg.delete()
+            
+            if success:
+                flash = f"✅ **Profile successfully cloned!**\n{msg}"
+            else:
+                flash = f"❌ **Cloning failed:** {msg}"
 
         # 4. Change Name
         elif action == "WAITING_FOR_NAME":

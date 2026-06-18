@@ -100,6 +100,15 @@ def register_handlers(client):
                 utils.styled_button("Hindi 🇮🇳", "set_lang_hi", style="primary"),
                 utils.styled_button("Russian 🇷🇺", "set_lang_ru", style="primary")
             ],
+            [
+                utils.styled_button("Japanese 🇯🇵", "set_lang_ja", style="primary"),
+                utils.styled_button("French 🇫🇷", "set_lang_fr", style="primary"),
+                utils.styled_button("German 🇩🇪", "set_lang_de", style="primary")
+            ],
+            [
+                utils.styled_button("Chinese 🇨🇳", "set_lang_zh", style="primary"),
+                utils.styled_button("Arabic 🇸🇦", "set_lang_ar", style="primary")
+            ],
             [utils.styled_button(utils.get_text("back_to_menu", lang), "menu_settings", style="primary")]
         ]
         

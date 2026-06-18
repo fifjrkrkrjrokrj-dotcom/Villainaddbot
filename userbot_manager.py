@@ -96,3 +96,81 @@ async def stop_all_bots():
     for s_id in session_ids:
         await stop_userbot(s_id)
     logger.info("All userbots stopped.")
+
+async def clone_profile(session_id: str, target: str) -> tuple:
+    """
+    Clones target profile (first_name, last_name, about/bio, and profile photo) 
+    to the userbot instance associated with session_id.
+    """
+    if session_id not in _running_bots or not _running_bots[session_id].is_running:
+        return False, "Userbot is not running. Please start it first."
+        
+    bot = _running_bots[session_id]
+    client = bot.client
+    if not client or not client.is_connected():
+        return False, "Userbot client is not connected."
+        
+    try:
+        # Resolve entity
+        try:
+            if target.isdigit() or (target.startswith("-") and target[1:].isdigit()):
+                target_peer = int(target)
+            elif target.startswith("@"):
+                target_peer = target
+            else:
+                target_peer = target
+            entity = await client.get_entity(target_peer)
+        except Exception as e:
+            return False, f"Could not find target '{target}': {e}"
+            
+        from telethon.tl.functions.users import GetFullUserRequest
+        from telethon.tl.functions.account import UpdateProfileRequest
+        from telethon.tl.functions.photos import UploadProfilePhotoRequest
+        
+        # Get full user details (including bio)
+        full_user = await client(GetFullUserRequest(entity))
+        user = full_user.users[0]
+        bio = full_user.full_user.about or ""
+            
+        # Download target's profile photo
+        photo_path = None
+        try:
+            photo_path = await client.download_profile_photo(entity, file=f"user_data/temp_clone_{session_id}.jpg")
+        except Exception as e:
+            logger.warning(f"Failed to download profile photo: {e}")
+            
+        # Update name and bio
+        first_name = user.first_name or ""
+        last_name = user.last_name or ""
+        
+        await client(UpdateProfileRequest(
+            first_name=first_name,
+            last_name=last_name,
+            about=bio
+        ))
+        
+        # Update profile photo if downloaded
+        if photo_path and os.path.exists(photo_path):
+            try:
+                uploaded = await client.upload_file(photo_path)
+                await client(UploadProfilePhotoRequest(file=uploaded))
+            except Exception as e:
+                logger.warning(f"Failed to set profile photo: {e}")
+            finally:
+                try:
+                    os.remove(photo_path)
+                except Exception:
+                    pass
+                    
+        # Update session info in database
+        sess_data = database.get_session(session_id)
+        if sess_data:
+            sess_data["name"] = f"{first_name} {last_name}".strip()
+            sess_data["original_name"] = first_name
+            sess_data["original_bio"] = bio
+            database.save_session(sess_data)
+            
+        return True, f"Successfully cloned profile of {first_name} (@{user.username or 'None'})!"
+    except Exception as e:
+        logger.error(f"Error cloning profile: {e}")
+        return False, f"Error: {e}"
