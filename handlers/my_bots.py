@@ -175,11 +175,11 @@ async def show_bot_dashboard(event, phone: str, user_id: int, flash_message: Opt
     buttons = []
     rows = []
     
-    # Row 0: Start/Stop
-    if status == "running":
-        rows.append([("btn_stop_bot", f"stop_bot_{phone}", "danger")])
-    else:
-        rows.append([("btn_start_bot", f"start_bot_{phone}", "success")])
+    # Row 0: Start and Stop side-by-side
+    rows.append([
+        ("btn_start_bot", f"start_bot_{phone}"),
+        ("btn_stop_bot", f"stop_bot_{phone}")
+    ])
         
     # Row 1: Set Broadcast, Set Welcome
     rows.append([
@@ -344,12 +344,37 @@ def register_handlers(client):
         }
         
         prompt_text = "👤 **Clone Profile**\n\nEnter the username (e.g. `@username` or `username`) or User ID of the profile you want to clone:"
-        buttons = [[utils.styled_button("🔙 Cancel", f"select_bot_{phone}", style="danger")]]
+        
+        sess = database.get_session(phone)
+        buttons = []
+        if sess and "original_first_name" in sess:
+            buttons.append([utils.styled_button("🔄 Return to Original Profile", f"restore_profile_{phone}", style="success")])
+        buttons.append([utils.styled_button("🔙 Cancel", f"select_bot_{phone}", style="danger")])
         
         try:
             await event.edit(prompt_text, buttons=buttons)
         except Exception:
             await event.respond(prompt_text, buttons=buttons)
+
+    @client.on(events.CallbackQuery(pattern=r"^restore_profile_(.+)$"))
+    async def restore_profile_callback(event):
+        phone = event.pattern_match.group(1)
+        user_id = event.sender_id
+        
+        if not userbot_manager.is_bot_running(phone):
+            await event.answer("⚠️ Userbot must be running to restore a profile.", alert=True)
+            return
+            
+        progress_msg = await event.reply("⏳ **Restoring original profile, please wait...**")
+        success, msg = await userbot_manager.restore_original_profile(phone)
+        await progress_msg.delete()
+        
+        if success:
+            flash = f"✅ **Profile restored!**\n{msg}"
+        else:
+            flash = f"❌ **Restoration failed:** {msg}"
+            
+        await show_bot_dashboard(event, phone, user_id, flash_message=flash)
 
     # ------------------ Navigation ------------------
     @client.on(events.CallbackQuery(pattern="^menu_my_bots$"))

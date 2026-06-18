@@ -94,6 +94,11 @@ def get_global_settings() -> Dict[str, Any]:
         if settings.get("start_image") == "https://files.catbox.moe/syoba0.jpg":
             settings["start_image"] = config.DEFAULT_GLOBAL_SETTINGS["start_image"]
             updated = True
+
+        # Self-healing: if help_image in DB is the old default, update it to the new one
+        if settings.get("help_image") == "https://files.catbox.moe/f9b2f1.jpg":
+            settings["help_image"] = config.DEFAULT_GLOBAL_SETTINGS["help_image"]
+            updated = True
             
         if updated:
             _db.settings.replace_one({"id": "global"}, settings)

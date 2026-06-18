@@ -39,7 +39,7 @@ DEFAULT_GLOBAL_SETTINGS = {
     "branding_duration": 30,          # Duration of branding in days
     "start_image": "https://files.catbox.moe/jnlroe.jpg",              # File ID of the start image
     "ping_image": "https://files.catbox.moe/7qgokb.jpg",               # File ID of the ping image
-    "help_image": "https://files.catbox.moe/f9b2f1.jpg",               # File ID of the help image
+    "help_image": "https://files.catbox.moe/xxpn14.jpg",               # File ID of the help image
     "admins": list(ORIGINAL_ADMIN_IDS), # List of admins
     "gpt_api_key": None,               # Global OpenAI API Key for GPT mode (optional)
     "maintenance_mode": False,         # Maintenance guard

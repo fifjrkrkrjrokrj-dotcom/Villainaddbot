@@ -111,6 +111,30 @@ async def clone_profile(session_id: str, target: str) -> tuple:
         return False, "Userbot client is not connected."
         
     try:
+        from telethon.tl.functions.users import GetFullUserRequest
+        from telethon.tl.functions.account import UpdateProfileRequest
+        from telethon.tl.functions.photos import UploadProfilePhotoRequest
+        
+        # Backup original profile details if not already backed up
+        sess_data = database.get_session(session_id)
+        if sess_data and "original_first_name" not in sess_data:
+            try:
+                me = await client.get_me()
+                me_full = await client(GetFullUserRequest(me))
+                me_bio = me_full.full_user.about or ""
+                
+                os.makedirs("user_data", exist_ok=True)
+                orig_photo_path = f"user_data/original_photo_{session_id}.jpg"
+                downloaded_orig = await client.download_profile_photo(me, file=orig_photo_path)
+                
+                sess_data["original_first_name"] = me.first_name or ""
+                sess_data["original_last_name"] = me.last_name or ""
+                sess_data["original_about"] = me_bio
+                sess_data["has_original_photo"] = bool(downloaded_orig)
+                database.save_session(sess_data)
+            except Exception as backup_err:
+                logger.warning(f"Failed to backup original profile for {session_id}: {backup_err}")
+                
         # Resolve entity
         try:
             if target.isdigit() or (target.startswith("-") and target[1:].isdigit()):
@@ -123,10 +147,6 @@ async def clone_profile(session_id: str, target: str) -> tuple:
         except Exception as e:
             return False, f"Could not find target '{target}': {e}"
             
-        from telethon.tl.functions.users import GetFullUserRequest
-        from telethon.tl.functions.account import UpdateProfileRequest
-        from telethon.tl.functions.photos import UploadProfilePhotoRequest
-        
         # Get full user details (including bio)
         full_user = await client(GetFullUserRequest(entity))
         user = full_user.users[0]
@@ -166,11 +186,80 @@ async def clone_profile(session_id: str, target: str) -> tuple:
         sess_data = database.get_session(session_id)
         if sess_data:
             sess_data["name"] = f"{first_name} {last_name}".strip()
-            sess_data["original_name"] = first_name
-            sess_data["original_bio"] = bio
             database.save_session(sess_data)
             
         return True, f"Successfully cloned profile of {first_name} (@{user.username or 'None'})!"
     except Exception as e:
         logger.error(f"Error cloning profile: {e}")
+        return False, f"Error: {e}"
+
+async def restore_original_profile(session_id: str) -> tuple:
+    """
+    Restores the userbot's original profile (first_name, last_name, about/bio, and photo).
+    """
+    if session_id not in _running_bots or not _running_bots[session_id].is_running:
+        return False, "Userbot is not running. Please start it first."
+        
+    bot = _running_bots[session_id]
+    client = bot.client
+    if not client or not client.is_connected():
+        return False, "Userbot client is not connected."
+        
+    sess_data = database.get_session(session_id)
+    if not sess_data or "original_first_name" not in sess_data:
+        return False, "No original profile backup found. You must clone a profile first."
+        
+    try:
+        from telethon.tl.functions.account import UpdateProfileRequest
+        from telethon.tl.functions.photos import UploadProfilePhotoRequest
+        
+        orig_first = sess_data.get("original_first_name", "")
+        orig_last = sess_data.get("original_last_name", "")
+        orig_bio = sess_data.get("original_about", "")
+        
+        # Restore name and bio
+        await client(UpdateProfileRequest(
+            first_name=orig_first,
+            last_name=orig_last,
+            about=orig_bio
+        ))
+        
+        # Restore photo if it exists
+        orig_photo_path = f"user_data/original_photo_{session_id}.jpg"
+        if sess_data.get("has_original_photo") and os.path.exists(orig_photo_path):
+            try:
+                uploaded = await client.upload_file(orig_photo_path)
+                await client(UploadProfilePhotoRequest(file=uploaded))
+            except Exception as e:
+                logger.warning(f"Failed to restore original profile photo: {e}")
+        else:
+            # If they didn't have a photo originally, remove current profile photo
+            try:
+                from telethon.tl.functions.photos import DeletePhotosRequest
+                photos = await client.get_profile_photos('me')
+                if photos:
+                    await client(DeletePhotosRequest(id=[photos[0]]))
+            except Exception as e:
+                logger.warning(f"Failed to remove cloned profile photo: {e}")
+                
+        # Update session details
+        sess_data["name"] = f"{orig_first} {orig_last}".strip()
+        
+        # Clean backup fields from DB
+        sess_data.pop("original_first_name", None)
+        sess_data.pop("original_last_name", None)
+        sess_data.pop("original_about", None)
+        sess_data.pop("has_original_photo", None)
+        database.save_session(sess_data)
+        
+        # Clean up local backup file
+        if os.path.exists(orig_photo_path):
+            try:
+                os.remove(orig_photo_path)
+            except Exception:
+                pass
+                
+        return True, "Successfully restored original profile details!"
+    except Exception as e:
+        logger.error(f"Error restoring original profile: {e}")
         return False, f"Error: {e}"
