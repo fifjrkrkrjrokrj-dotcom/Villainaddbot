@@ -42,7 +42,7 @@ def register_handlers(client):
             if not data:
                 return
                 
-            if data.startswith("approve_payment_") or data.startswith("reject_payment_"):
+            if data.startswith("approve_payment_") or data.startswith("reject_payment_") or data.startswith("payment_info_"):
                 return
                 
             # Run Guard check (exception: 'verify_sub' must pass through)
