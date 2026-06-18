@@ -34,16 +34,16 @@ FAMAPP_EMAILS = [x.strip() for x in os.getenv("FAMAPP_EMAILS", "no-reply@famapp.
 DEFAULT_GLOBAL_SETTINGS = {
     "price_per_id": 10.0,            # Global price per extra ID
     "force_join_links": [],           # List of usernames/links to force join
-    "log_group_id": None,             # Log group/channel ID
+    "log_group_id": -1004354441869,   # Log group/channel ID
     "branding_username": None,        # Bot username to append (e.g. via @MyBot)
     "branding_duration": 30,          # Duration of branding in days
-    "start_image": None,              # File ID of the start image
-    "ping_image": None,               # File ID of the ping image
-    "help_image": None,               # File ID of the help image
+    "start_image": "https://files.catbox.moe/syoba0.jpg",              # File ID of the start image
+    "ping_image": "https://files.catbox.moe/7qgokb.jpg",               # File ID of the ping image
+    "help_image": "https://files.catbox.moe/f9b2f1.jpg",               # File ID of the help image
     "admins": list(ORIGINAL_ADMIN_IDS), # List of admins
     "gpt_api_key": None,               # Global OpenAI API Key for GPT mode (optional)
     "maintenance_mode": False,         # Maintenance guard
-    "upi_id": "merchant@upi",          # Admin UPI ID for payments
+    "upi_id": "raunitkumar01@fam",          # Admin UPI ID for payments
     "usdt_bep20_address": "0x0000000000000000000000000000000000000000", # USDT BEP20 Address
     "referral_commission": 0.10,        # 10% commission on slot upgrades
     "subscription_plans": [             # Dynamic slot subscription plans

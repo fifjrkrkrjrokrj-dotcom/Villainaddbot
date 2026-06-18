@@ -1,5 +1,5 @@
 import logging
-from telethon import events
+from telethon import events, Button
 import database
 import models
 import config
@@ -81,6 +81,11 @@ async def show_main_menu(event, user_id):
         [
             styled_button(get_text("btn_settings", lang), "menu_settings", style="primary"),
             styled_button(get_text("btn_status", lang), "menu_status", style="primary")
+        ],
+        [
+            Button.url(get_text("btn_owner", lang), "https://t.me/v90001"),
+            Button.url(get_text("btn_support_channel", lang), "https://t.me/+Qzy2vnoy3g00OTE1"),
+            Button.url(get_text("btn_support_group", lang), "https://t.me/+DlgFzulC_JY5OWI1")
         ]
     ]
     
