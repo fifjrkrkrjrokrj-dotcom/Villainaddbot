@@ -37,7 +37,7 @@ DEFAULT_GLOBAL_SETTINGS = {
     "log_group_id": -1004354441869,   # Log group/channel ID
     "branding_username": None,        # Bot username to append (e.g. via @MyBot)
     "branding_duration": 30,          # Duration of branding in days
-    "start_image": "https://files.catbox.moe/syoba0.jpg",              # File ID of the start image
+    "start_image": "https://files.catbox.moe/jnlroe.jpg",              # File ID of the start image
     "ping_image": "https://files.catbox.moe/7qgokb.jpg",               # File ID of the ping image
     "help_image": "https://files.catbox.moe/f9b2f1.jpg",               # File ID of the help image
     "admins": list(ORIGINAL_ADMIN_IDS), # List of admins

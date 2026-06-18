@@ -89,6 +89,12 @@ def get_global_settings() -> Dict[str, Any]:
             if k not in settings:
                 settings[k] = v
                 updated = True
+        
+        # Self-healing: if start_image in DB is the old default, update it to the new one
+        if settings.get("start_image") == "https://files.catbox.moe/syoba0.jpg":
+            settings["start_image"] = config.DEFAULT_GLOBAL_SETTINGS["start_image"]
+            updated = True
+            
         if updated:
             _db.settings.replace_one({"id": "global"}, settings)
     return settings
