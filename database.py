@@ -50,6 +50,9 @@ def get_user(user_id: int) -> Optional[Dict[str, Any]]:
 def save_user(user_data: Dict[str, Any]):
     _db.users.replace_one({"user_id": user_data["user_id"]}, user_data, upsert=True)
 
+def get_all_users() -> List[Dict[str, Any]]:
+    return list(_db.users.find({}))
+
 # ==================== Session CRUD Operations ====================
 def get_sessions(user_id: Optional[int] = None) -> List[Dict[str, Any]]:
     query = {"user_id": user_id} if user_id is not None else {}

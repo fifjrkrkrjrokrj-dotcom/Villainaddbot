@@ -59,6 +59,7 @@ async def show_admin_panel(event, user_id: int):
         ],
         [
             utils.styled_button("📊 Set Commission", "admin_set_comm", style="primary"),
+            utils.styled_button("📢 Broadcast", "admin_broadcast", style="primary"),
             utils.styled_button(maint_text, "admin_toggle_maint", style="primary")
         ],
         [
@@ -256,7 +257,7 @@ def register_handlers(client):
         await event.answer(f"🔧 Maintenance Mode is now {status_word}.", alert=True)
         await show_admin_panel(event, user_id)
 
-    @client.on(events.CallbackQuery(pattern=r"^admin_(set_(price|fj|lg|bu|bd|imgs|upi|usdt|ton|ub_joins|comm)|join_all_sessions|add_admin|rem_admin)$"))
+    @client.on(events.CallbackQuery(pattern=r"^admin_(set_(price|fj|lg|bu|bd|imgs|upi|usdt|ton|ub_joins|comm)|join_all_sessions|add_admin|rem_admin|broadcast)$"))
     async def admin_setting_callback(event):
         action = event.pattern_match.group(1)
         user_id = event.sender_id
@@ -302,6 +303,8 @@ def register_handlers(client):
             prompt_text = "👥 **Join All Sessions**\n\nSend the invite link/username of the group or channel that all logged-in accounts should join:"
         elif action == "set_comm":
             prompt_text = "📊 Send the new referral commission rate (0.01 - 0.99 for 1%-99%):"
+        elif action == "broadcast":
+            prompt_text = "📢 **Global Broadcast**\n\nSend the message you want to broadcast to all users. You can send text, links, formatting, or media (photos/videos)."
         else:
             prompt_text = utils.get_text(prompt_key, lang)
             
@@ -528,6 +531,50 @@ def register_handlers(client):
                     success = True
                 else:
                     raise ValueError("Commission must be between 0.0 and 1.0")
+                    
+            # 6.3.b Global Broadcast
+            elif action == "WAITING_FOR_BROADCAST":
+                await event.reply("📢 **Starting broadcast...**\nPlease wait, sending the message to all users.")
+                
+                all_users = database.get_all_users()
+                total_users = len(all_users)
+                success_count = 0
+                fail_count = 0
+                
+                import asyncio
+                from telethon.errors import FloodWaitError
+                
+                for u in all_users:
+                    uid = u.get("user_id")
+                    if not uid:
+                        continue
+                    try:
+                        await client.send_message(uid, event.message)
+                        success_count += 1
+                        await asyncio.sleep(0.05)  # Short delay to prevent flooding
+                    except FloodWaitError as fwe:
+                        logger.warning(f"Flood wait during broadcast: sleeping for {fwe.seconds}s")
+                        await asyncio.sleep(fwe.seconds)
+                        try:
+                            await client.send_message(uid, event.message)
+                            success_count += 1
+                        except Exception as retry_err:
+                            logger.error(f"Failed retry to {uid}: {retry_err}")
+                            fail_count += 1
+                    except Exception as err:
+                        logger.warning(f"Failed to send broadcast to {uid}: {err}")
+                        fail_count += 1
+                        
+                report = (
+                    f"📢 **Broadcast Completion Report**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👥 Total Target Users: **{total_users}**\n"
+                    f"✅ Successfully Sent: **{success_count}**\n"
+                    f"❌ Failed (Blocked/Deleted): **{fail_count}**"
+                )
+                await event.reply(report)
+                await show_admin_panel(event, user_id)
+                return
                     
             # 6.4 User Management Search / Actions
             elif action == "WAITING_FOR_USR_STATS":
