@@ -11,6 +11,12 @@ logger = logging.getLogger(__name__)
 _mongo_client: Optional[MongoClient] = None
 _db = None
 
+# In-memory cache for settings and channels to avoid heavy synchronous MongoDB queries
+_cached_global_settings = None
+_cached_settings_time = 0.0
+_cached_force_channels = None
+_cached_channels_time = 0.0
+
 def db_init():
     """
     Initializes the MongoDB connection.
@@ -122,51 +128,78 @@ def save_payment_request(payment_data: Dict[str, Any]):
 
 # ==================== Settings CRUD Operations ====================
 def get_global_settings() -> Dict[str, Any]:
-    settings = _db.settings.find_one({"id": "global"})
-    if not settings:
-        settings = dict(config.DEFAULT_GLOBAL_SETTINGS)
-        settings["id"] = "global"
-        _db.settings.insert_one(settings)
-    else:
-        # Merge defaults to ensure new settings keys are backfilled
-        updated = False
-        for k, v in config.DEFAULT_GLOBAL_SETTINGS.items():
-            if k not in settings:
-                settings[k] = v
-                updated = True
-        
-        # Self-healing: if start_image in DB is the old default, update it to the new one
-        if settings.get("start_image") == "https://files.catbox.moe/syoba0.jpg":
-            settings["start_image"] = config.DEFAULT_GLOBAL_SETTINGS["start_image"]
-            updated = True
-
-        # Self-healing: if help_image in DB is the old default, update it to the new one
-        if settings.get("help_image") == "https://files.catbox.moe/f9b2f1.jpg":
-            settings["help_image"] = config.DEFAULT_GLOBAL_SETTINGS["help_image"]
-            updated = True
+    global _cached_global_settings, _cached_settings_time
+    now = time.time()
+    
+    # Cache settings for 10 seconds to reduce MongoDB round-trips
+    if _cached_global_settings is None or (now - _cached_settings_time > 10.0):
+        settings = _db.settings.find_one({"id": "global"})
+        if not settings:
+            settings = dict(config.DEFAULT_GLOBAL_SETTINGS)
+            settings["id"] = "global"
+            _db.settings.insert_one(settings)
+        else:
+            # Merge defaults to ensure new settings keys are backfilled
+            updated = False
+            for k, v in config.DEFAULT_GLOBAL_SETTINGS.items():
+                if k not in settings:
+                    settings[k] = v
+                    updated = True
             
-        if updated:
-            _db.settings.replace_one({"id": "global"}, settings)
-    return settings
+            # Self-healing: if start_image in DB is the old default, update it to the new one
+            if settings.get("start_image") == "https://files.catbox.moe/syoba0.jpg":
+                settings["start_image"] = config.DEFAULT_GLOBAL_SETTINGS["start_image"]
+                updated = True
+
+            # Self-healing: if help_image in DB is the old default, update it to the new one
+            if settings.get("help_image") == "https://files.catbox.moe/f9b2f1.jpg":
+                settings["help_image"] = config.DEFAULT_GLOBAL_SETTINGS["help_image"]
+                updated = True
+                
+            if updated:
+                _db.settings.replace_one({"id": "global"}, settings)
+                
+        _cached_global_settings = settings
+        _cached_settings_time = now
+        
+    return dict(_cached_global_settings)
 
 def save_global_settings(settings_data: Dict[str, Any]):
+    global _cached_global_settings, _cached_settings_time
     settings_data["id"] = "global"
     _db.settings.replace_one({"id": "global"}, settings_data, upsert=True)
+    # Update cache
+    _cached_global_settings = dict(settings_data)
+    _cached_settings_time = time.time()
 
 # ==================== Force Channels CRUD ====================
 def get_force_channels() -> List[Dict[str, Any]]:
-    return list(_db.force_channels.find({}))
+    global _cached_force_channels, _cached_channels_time
+    now = time.time()
+    
+    # Cache force subscribe channels list for 10 seconds
+    if _cached_force_channels is None or (now - _cached_channels_time > 10.0):
+        _cached_force_channels = list(_db.force_channels.find({}))
+        _cached_channels_time = now
+        
+    return _cached_force_channels
 
 def add_force_channel(channel_id: str, invite_link: str, channel_name: str):
+    global _cached_force_channels
     data = {
         "channel_id": channel_id,
         "channel_link": invite_link,
         "channel_name": channel_name
     }
     _db.force_channels.replace_one({"channel_id": channel_id}, data, upsert=True)
+    # Invalidate cache
+    _cached_force_channels = None
 
 def delete_force_channel(channel_id: str):
+    global _cached_force_channels
     _db.force_channels.delete_one({"channel_id": channel_id})
+    # Invalidate cache
+    _cached_force_channels = None
 
 # ==================== Coupons CRUD ====================
 def get_coupons() -> List[Dict[str, Any]]:

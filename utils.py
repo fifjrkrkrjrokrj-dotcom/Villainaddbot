@@ -111,10 +111,10 @@ async def check_force_sub(client, user_id: int) -> list:
             logger.debug(f"User {user_id} not in channel {ch_id}: {e}")
             not_joined.append(ch)
             
-    # Cache the result.
-    # If they joined everything, cache it for 60 seconds.
-    # If they are missing some channels, cache it for only 5 seconds.
-    cache_duration = 60 if not not_joined else 5
+    # Cache the result to reduce Telegram API calls and improve latency.
+    # If they joined everything, cache it for 300 seconds (5 minutes).
+    # If they are missing some channels, cache it for 60 seconds (1 minute).
+    cache_duration = 300 if not not_joined else 60
     _force_sub_cache[user_id] = (now + cache_duration, not_joined)
     
     return not_joined
