@@ -240,7 +240,7 @@ async def show_bot_dashboard(event, phone: str, user_id: int, flash_message: Opt
                 elif key in ("btn_stop_bot", "btn_delete_bot"):
                     style = "danger"
                 elif key == "btn_restart_bot":
-                    style = "warning"
+                    style = None
                 elif override_style:
                     style = override_style
                 else:
