@@ -91,13 +91,38 @@ def db_init():
         logger.critical(f"Failed to connect to MongoDB: {e}")
         raise e
 
+# Cache dictionary for user records: { user_id: (expiry_timestamp, user_data_dict) }
+_user_cache: Dict[int, tuple] = {}
+
 # ==================== User CRUD Operations ====================
 def get_user(user_id: int) -> Optional[Dict[str, Any]]:
-    return _db.users.find_one({"user_id": {"$in": [int(user_id), str(user_id)]}})
+    global _user_cache
+    now = time.time()
+    uid = int(user_id)
+    
+    # Check cache
+    if uid in _user_cache:
+        expiry, cached_user = _user_cache[uid]
+        if now < expiry:
+            return dict(cached_user) if cached_user else None
+            
+    # Fetch from MongoDB
+    user = _db.users.find_one({"user_id": {"$in": [uid, str(uid)]}})
+    
+    # Cache for 5 seconds
+    _user_cache[uid] = (now + 5.0, dict(user) if user else None)
+    return user
 
 def save_user(user_data: Dict[str, Any]):
-    user_data["user_id"] = int(user_data["user_id"])
-    _db.users.replace_one({"user_id": user_data["user_id"]}, user_data, upsert=True)
+    global _user_cache
+    uid = int(user_data["user_id"])
+    user_data["user_id"] = uid
+    
+    # Save to MongoDB
+    _db.users.replace_one({"user_id": uid}, user_data, upsert=True)
+    
+    # Update cache
+    _user_cache[uid] = (time.time() + 5.0, dict(user_data))
 
 def get_all_users() -> List[Dict[str, Any]]:
     return list(_db.users.find({}))

@@ -49,16 +49,20 @@ async def start_all_running_bots():
     logger.info("Resuming previously active userbots...")
     sessions = database.get_sessions()
     
-    tasks = []
+    running_count = 0
     for s in sessions:
         if s.get("status") == "running":
-            tasks.append(start_userbot(s["session_id"]))
-            
-    if tasks:
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        logger.info(f"Resumed {sum(1 for r in results if r is True)} userbot(s).")
-    else:
-        logger.info("No userbots to resume.")
+            session_id = s["session_id"]
+            try:
+                # Start userbots sequentially with a small delay to avoid network/loop congestion
+                success = await start_userbot(session_id)
+                if success:
+                    running_count += 1
+                await asyncio.sleep(1.5)
+            except Exception as e:
+                logger.error(f"Error resuming userbot {session_id} on startup: {e}")
+                
+    logger.info(f"Resumed {running_count} userbot(s).")
 
 async def remove_userbot(session_id: str):
     """
